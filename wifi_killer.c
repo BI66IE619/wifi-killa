@@ -2,12 +2,13 @@
 #include <gui/gui.h>
 #include <input/input.h>
 #include <furi_hal_serial.h>
-#include <furi_hal_power.h>
+// NEW: Include the expansion module header
+#include <expansion/expansion.h> 
 
 static bool running = true;
 static bool esp32_connected = false;
 
-#define UART_CHANNEL 0
+#define UART_CHANNEL 0 // USART1
 
 static void input_callback(InputEvent* input, void* ctx) {
     UNUSED(ctx);
@@ -18,20 +19,10 @@ static void input_callback(InputEvent* input, void* ctx) {
 
 // Try to init UART safely
 static bool init_uart() {
-    // Check if pins are available
-    if(!furi_hal_power_is_otg_enabled()) {
-        furi_hal_power_enable_otg(); // Enable 5V for external modules
-    }
-    
-    // Attempt to init serial
     furi_hal_serial_init(UART_CHANNEL, 115200);
     furi_delay_ms(200);
-    
-    // Send a test AT command to see if ESP32 responds
     furi_hal_serial_tx(UART_CHANNEL, (uint8_t*)"AT\r\n", 4);
     furi_delay_ms(100);
-    
-    // For simplicity, assume it's connected if no crash
     return true;
 }
 
@@ -65,6 +56,10 @@ static void draw_callback(Canvas* canvas, void* ctx) {
 int32_t wifi_killer_app(void* p) {
     UNUSED(p);
     
+    // NEW: Get a handle to the expansion system and disable it
+    Expansion* expansion = furi_record_open(RECORD_EXPANSION);
+    expansion_disable(expansion);
+    
     // GUI setup
     ViewPort* view_port = view_port_alloc();
     view_port_draw_callback_set(view_port, draw_callback, NULL);
@@ -72,14 +67,14 @@ int32_t wifi_killer_app(void* p) {
     Gui* gui = furi_record_open(RECORD_GUI);
     gui_add_view_port(gui, view_port, GuiLayerFullscreen);
     
-    // Try to init UART safely
+    // Try to init UART
     esp32_connected = init_uart();
     
     if(esp32_connected) {
         send_deauth_command();
     }
     
-    // Main loop - safe even without ESP32
+    // Main loop
     uint32_t counter = 0;
     while(running) {
         furi_delay_ms(100);
@@ -100,6 +95,10 @@ int32_t wifi_killer_app(void* p) {
     gui_remove_view_port(gui, view_port);
     view_port_free(view_port);
     furi_record_close(RECORD_GUI);
+    
+    // NEW: Re-enable the expansion system when we're done
+    expansion_enable(expansion);
+    furi_record_close(RECORD_EXPANSION);
     
     return 0;
 }
