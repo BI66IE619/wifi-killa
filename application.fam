@@ -1,9 +1,10 @@
 App(
     appid="wifi_killer",
-    name="WiFi Killer 100m",
+    name="WiFi Killer",
     apptype=FlipperAppType.EXTERNAL,
     entry_point="wifi_killer_app",
-    stack_size=2048,
+    stack_size=1024,
     fap_category="Tools",
+    fap_icon="icon.png",
     sources=["wifi_killer.c"],
 )
