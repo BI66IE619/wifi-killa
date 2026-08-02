@@ -5,10 +5,8 @@
 
 static bool running = true;
 
-// UART config for ESP32
-#define UART_CHANNEL FuriHalSerialIdUsart1
-#define ESP32_TX_PIN 13
-#define ESP32_RX_PIN 14
+// Use USART1 directly (pin 13 = TX, pin 14 = RX on Flipper)
+#define UART_CHANNEL 0  // 0 = USART1, 1 = USART2
 
 static void input_callback(InputEvent* input, void* ctx) {
     UNUSED(ctx);
@@ -47,7 +45,7 @@ int32_t wifi_killer_app(void* p) {
     Gui* gui = furi_record_open(RECORD_GUI);
     gui_add_view_port(gui, view_port, GuiLayerFullscreen);
     
-    // Init UART
+    // Init UART on USART1 (pins 13 & 14)
     furi_hal_serial_init(UART_CHANNEL, 115200);
     furi_delay_ms(500);
     
