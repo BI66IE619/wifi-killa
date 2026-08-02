@@ -5,5 +5,5 @@ App(
     entry_point="wifi_killer_app",
     stack_size=2048,
     fap_category="Tools",
-    source=["wifi_killer.c"],
+    sources=["wifi_killer.c"],
 )
